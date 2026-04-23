@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h2 class="text-lg font-bold text-gray-700 mb-4">已标记的条目 ({{ items|length }})</h2>
+
+{% for it in items %}
+<div class="bg-white rounded-lg shadow-sm p-4 mb-3 border-l-4 border-yellow-400 bg-yellow-50">
+  <div class="flex items-start justify-between gap-3">
+    <div class="flex-1 min-w-0">
+      <div class="flex items-center gap-2 mb-1">
+        {% if it.source == 'hackernews' %}
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">HN</span>
+        {% elif it.source == 'v2ex' %}
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-green-100 text-green-700">V2EX</span>
+        {% elif it.source == 'reddit' %}
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-red-100 text-red-700">Reddit</span>
+        {% elif it.source == 'zhihu' %}
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">知乎</span>
+        {% elif it.source == 'sspai' %}
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-pink-100 text-pink-700">少数派</span>
+        {% elif it.source == 'github' %}
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-gray-800 text-white">GitHub</span>
+        {% endif %}
+        {% if it.ai_flagged %}
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">AI 推荐</span>
+        {% endif %}
+        {% if it.is_translated %}
+          <span class="text-xs px-1 py-0.5 rounded bg-sky-100 text-sky-600" title="原文为英文,已自动翻译">译</span>
+        {% endif %}
+        <a id="title-{{ it.id }}" href="{{ it.url }}" target="_blank"
+           class="text-sm font-medium text-gray-900 hover:text-indigo-600 truncate">
+          {{ it.title }}
+        </a>
+      </div>
+
+      {% if it.content %}
+        <p id="content-{{ it.id }}" class="text-xs text-gray-500 mb-2 line-clamp-2">{{ it.content[:200] }}</p>
+      {% endif %}
+
+      <div class="flex flex-wrap items-center gap-3 text-xs text-gray-400">
+        {% if it.source == 'reddit' %}
+          <button onclick="translateItem(this, {{ it.id }})"
+                  class="text-blue-500 hover:text-blue-700 cursor-pointer">翻译</button>
+        {% endif %}
+        <span class="font-semibold text-indigo-600">{{ it.pain_score }}分</span>
+        {% for kw in it.matched_keywords|matched %}
+          <span class="bg-indigo-50 text-indigo-500 px-1 rounded">{{ kw }}</span>
+        {% endfor %}
+        <span>{{ it.created_at|rel_time }}</span>
+        {% if it.author %}<span>@{{ it.author }}</span>{% endif %}
+      </div>
+    </div>
+
+    <form method="post" action="/star/{{ it.id }}">
+      <button class="text-xs px-2 py-1 rounded border bg-yellow-100 text-yellow-700 border-yellow-300">
+        取消标记
+      </button>
+    </form>
+  </div>
+</div>
+{% else %}
+  <p class="text-center text-gray-400 py-12">还没有标记过任何条目</p>
+{% endfor %}
+
+<script>
+async function translateItem(btn, id) {
+  btn.disabled = true;
+  btn.textContent = '翻译中...';
+  const titleEl = document.getElementById('title-' + id);
+  const contentEl = document.getElementById('content-' + id);
+  try {
+    if (titleEl) {
+      const r = await fetch('/translate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({text: titleEl.textContent.trim()})
+      });
+      const d = await r.json();
+      titleEl.textContent = d.translated;
+    }
+    if (contentEl && contentEl.textContent.trim()) {
+      const r = await fetch('/translate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({text: contentEl.textContent.trim()})
+      });
+      const d = await r.json();
+      contentEl.textContent = d.translated;
+    }
+    btn.textContent = '已翻译';
+    btn.classList.replace('text-blue-500', 'text-gray-400');
+    btn.classList.replace('hover:text-blue-700', 'text-gray-400');
+  } catch(e) {
+    btn.textContent = '翻译失败';
+    btn.disabled = false;
+  }
+}
+</script>
+
+{% endblock %}

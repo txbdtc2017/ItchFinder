@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block content %}
+
+<!-- 筛选栏 -->
+<form method="get" action="/" class="bg-white rounded-lg shadow-sm p-4 mb-6 flex flex-wrap items-end gap-4">
+  <input type="hidden" name="applied" value="1">
+
+  <div>
+    <label class="block text-xs text-gray-500 mb-1">平台</label>
+    <select name="source" class="border rounded px-2 py-1 text-sm">
+      <option value="">全部</option>
+      <option value="hackernews" {% if source == 'hackernews' %}selected{% endif %}>HN</option>
+      <option value="v2ex" {% if source == 'v2ex' %}selected{% endif %}>V2EX</option>
+      <option value="reddit" {% if source == 'reddit' %}selected{% endif %}>Reddit</option>
+      <option value="zhihu" {% if source == 'zhihu' %}selected{% endif %}>知乎</option>
+      <option value="sspai" {% if source == 'sspai' %}selected{% endif %}>少数派</option>
+      <option value="github" {% if source == 'github' %}selected{% endif %}>GitHub</option>
+    </select>
+  </div>
+
+  <div>
+    <label class="block text-xs text-gray-500 mb-1">最低分</label>
+    <input type="number" name="min_score" value="{{ min_score }}" min="0"
+           class="border rounded px-2 py-1 text-sm w-16">
+  </div>
+
+  <div class="flex items-center gap-3">
+    <label class="flex items-center gap-1 text-sm">
+      <input type="checkbox" name="show_starred" value="1"
+             {% if show_starred %}checked{% endif %}>
+      显示已标记
+    </label>
+    <label class="flex items-center gap-1 text-sm">
+      <input type="checkbox" name="show_hidden" value="1"
+             {% if show_hidden %}checked{% endif %}>
+      显示已隐藏
+    </label>
+  </div>
+
+  <div class="flex-1 min-w-[160px]">
+    <label class="block text-xs text-gray-500 mb-1">搜索</label>
+    <input type="text" name="q" value="{{ q }}" placeholder="标题 / 内容关键词"
+           class="border rounded px-2 py-1 text-sm w-full">
+  </div>
+
+  <button type="submit"
+          class="bg-indigo-600 text-white px-4 py-1 rounded text-sm hover:bg-indigo-700">
+    筛选
+  </button>
+</form>
+
+<!-- 结果计数 -->
+<p class="text-sm text-gray-400 mb-3">共 {{ items|length }} 条</p>
+
+<!-- 列表 -->
+{% for it in items %}
+<div class="bg-white rounded-lg shadow-sm p-4 mb-3 {% if it.is_starred %}border-l-4 border-yellow-400 bg-yellow-50{% endif %}">
+  <div class="flex items-start justify-between gap-3">
+    <div class="flex-1 min-w-0">
+      <!-- 平台徽章 + 标题 -->
+      <div class="flex items-center gap-2 mb-1">
+        {% if it.source == 'hackernews' %}
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-orange-100 text-orange-700">HN</span>
+        {% elif it.source == 'v2ex' %}
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-green-100 text-green-700">V2EX</span>
+        {% elif it.source == 'reddit' %}
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-red-100 text-red-700">Reddit</span>
+        {% elif it.source == 'zhihu' %}
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">知乎</span>
+        {% elif it.source == 'sspai' %}
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-pink-100 text-pink-700">少数派</span>
+        {% elif it.source == 'github' %}
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-gray-800 text-white">GitHub</span>
+        {% endif %}
+        {% if it.ai_flagged %}
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">AI 推荐</span>
+        {% endif %}
+        {% if it.is_translated %}
+          <span class="text-xs px-1 py-0.5 rounded bg-sky-100 text-sky-600" title="原文为英文,已自动翻译">译</span>
+        {% endif %}
+        <a id="title-{{ it.id }}" href="{{ it.url }}" target="_blank"
+           class="text-sm font-medium text-gray-900 hover:text-indigo-600 truncate">
+          {{ it.title }}
+        </a>
+      </div>
+
+      <!-- 内容预览 -->
+      {% if it.content %}
+        <p id="content-{{ it.id }}" class="text-xs text-gray-500 mb-2 line-clamp-2">{{ it.content[:200] }}</p>
+      {% endif %}
+
+      <!-- 元信息行 -->
+      <div class="flex flex-wrap items-center gap-3 text-xs text-gray-400">
+        {% if it.source == 'reddit' %}
+          <button onclick="translateItem(this, {{ it.id }})"
+                  class="text-blue-500 hover:text-blue-700 cursor-pointer">翻译</button>
+        {% endif %}
+        <span class="font-semibold text-indigo-600">{{ it.pain_score }}分</span>
+        {% for kw in it.matched_keywords|matched %}
+          <span class="bg-indigo-50 text-indigo-500 px-1 rounded">{{ kw }}</span>
+        {% endfor %}
+        <span>{{ it.created_at|rel_time }}</span>
+        {% if it.author %}<span>@{{ it.author }}</span>{% endif %}
+      </div>
+    </div>
+
+    <!-- 操作按钮 -->
+    <div class="flex flex-col gap-1 flex-shrink-0">
+      <form method="post" action="/star/{{ it.id }}">
+        <button class="text-xs px-2 py-1 rounded border
+          {% if it.is_starred %}bg-yellow-100 text-yellow-700 border-yellow-300{% else %}bg-white text-gray-500 border-gray-200 hover:border-yellow-300{% endif %}">
+          {% if it.is_starred %}已标记{% else %}标记{% endif %}
+        </button>
+      </form>
+      <form method="post" action="/hide/{{ it.id }}">
+        <button class="text-xs px-2 py-1 rounded border
+          {% if it.is_hidden %}bg-gray-200 text-gray-500 border-gray-300{% else %}bg-white text-gray-500 border-gray-200 hover:border-gray-400{% endif %}">
+          {% if it.is_hidden %}已隐藏{% else %}隐藏{% endif %}
+        </button>
+      </form>
+    </div>
+  </div>
+</div>
+{% else %}
+  <p class="text-center text-gray-400 py-12">没有匹配的条目</p>
+{% endfor %}
+
+<script>
+async function translateItem(btn, id) {
+  btn.disabled = true;
+  btn.textContent = '翻译中...';
+  const titleEl = document.getElementById('title-' + id);
+  const contentEl = document.getElementById('content-' + id);
+  try {
+    if (titleEl) {
+      const r = await fetch('/translate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({text: titleEl.textContent.trim()})
+      });
+      const d = await r.json();
+      titleEl.textContent = d.translated;
+    }
+    if (contentEl && contentEl.textContent.trim()) {
+      const r = await fetch('/translate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({text: contentEl.textContent.trim()})
+      });
+      const d = await r.json();
+      contentEl.textContent = d.translated;
+    }
+    btn.textContent = '已翻译';
+    btn.classList.replace('text-blue-500', 'text-gray-400');
+    btn.classList.replace('hover:text-blue-700', 'text-gray-400');
+  } catch(e) {
+    btn.textContent = '翻译失败';
+    btn.disabled = false;
+  }
+}
+</script>
+
+{% endblock %}
