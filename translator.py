@@ -8,7 +8,10 @@ import httpx
 import db
 
 TRANSLATE_URL = "https://translate.googleapis.com/translate_a/single"
-ENGLISH_SOURCES = ["hackernews", "reddit", "github"]
+ENGLISH_SOURCES = [
+    "hackernews", "reddit", "github",
+    "devto", "lobsters", "stackoverflow",
+]
 BATCH_LIMIT = 200
 
 

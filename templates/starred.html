@@ -20,6 +20,16 @@
           <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-pink-100 text-pink-700">少数派</span>
         {% elif it.source == 'github' %}
           <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-gray-800 text-white">GitHub</span>
+        {% elif it.source == 'devto' %}
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-black text-white">Dev.to</span>
+        {% elif it.source == 'lobsters' %}
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-rose-100 text-rose-700">Lobsters</span>
+        {% elif it.source == 'stackoverflow' %}
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">SO</span>
+        {% elif it.source == 'juejin' %}
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-cyan-100 text-cyan-700">掘金</span>
+        {% elif it.source == 'rss_tech' %}
+          <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-teal-100 text-teal-700">科技 RSS</span>
         {% endif %}
         {% if it.ai_flagged %}
           <span class="text-xs font-medium px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">AI 推荐</span>

@@ -17,7 +17,19 @@ from fastapi.templating import Jinja2Templates
 
 import db
 from ai_scorer import run_ai_scoring
-from sources import github_issues, hackernews, reddit, sspai, v2ex, zhihu
+from sources import (
+    devto,
+    github_issues,
+    hackernews,
+    juejin,
+    lobsters,
+    reddit,
+    rss_tech,
+    sspai,
+    stackoverflow,
+    v2ex,
+    zhihu,
+)
 from translator import translate_new_items
 
 BASE_DIR = Path(__file__).parent
@@ -77,6 +89,8 @@ templates.env.globals["parse_json"] = json.loads
 SOURCE_NAMES = {
     "hackernews": "HN", "v2ex": "V2EX", "reddit": "Reddit",
     "zhihu": "知乎", "sspai": "少数派", "github_issues": "GitHub Issues",
+    "devto": "Dev.to", "lobsters": "Lobsters", "stackoverflow": "StackOverflow",
+    "juejin": "掘金", "rss_tech": "科技 RSS",
 }
 
 
@@ -89,7 +103,10 @@ async def run_all_fetchers() -> None:
 async def pipeline_events(trigger: str = "manual"):
     """async generator:逐步 yield 进度字符串。供调度任务和 SSE 共用。结束时写 refresh_log。"""
     stats: dict[str, int] = {}
-    for mod in (hackernews, v2ex, reddit, zhihu, sspai, github_issues):
+    for mod in (
+        hackernews, v2ex, reddit, zhihu, sspai, github_issues,
+        devto, lobsters, stackoverflow, juejin, rss_tech,
+    ):
         key = mod.__name__.split(".")[-1]
         name = SOURCE_NAMES.get(key, key)
         yield f"正在抓取 {name}..."

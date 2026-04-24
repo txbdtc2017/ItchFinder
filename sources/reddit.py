@@ -24,6 +24,11 @@ SUBREDDITS = [
     "SaaS",
     "indiehackers",
     "smallbusiness",
+    "webdev",
+    "startups",
+    "productivity",
+    "selfhosted",
+    "programming",
 ]
 
 URL_TMPL = "https://old.reddit.com/r/{sub}/new.json?limit=50"
