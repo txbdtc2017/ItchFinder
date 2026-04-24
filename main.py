@@ -12,7 +12,7 @@ load_dotenv()
 import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 import db
@@ -45,6 +45,19 @@ def rel_time(iso: str | None) -> str:
     return t.strftime("%Y-%m-%d")
 
 
+def abs_time(iso: str | None) -> str:
+    """ISO UTC 转本地时区的 'MM-DD HH:MM'。"""
+    if not iso:
+        return ""
+    try:
+        t = datetime.fromisoformat(iso)
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+        return t.astimezone().strftime("%m-%d %H:%M")
+    except Exception:
+        return iso
+
+
 def matched_list(s: str | None) -> list[str]:
     if not s:
         return []
@@ -55,28 +68,47 @@ def matched_list(s: str | None) -> list[str]:
 
 
 templates.env.filters["rel_time"] = rel_time
+templates.env.filters["abs_time"] = abs_time
 templates.env.filters["matched"] = matched_list
+templates.env.globals["recent_refreshes"] = lambda: db.get_recent_refreshes(8)
+templates.env.globals["parse_json"] = json.loads
+
+
+SOURCE_NAMES = {
+    "hackernews": "HN", "v2ex": "V2EX", "reddit": "Reddit",
+    "zhihu": "知乎", "sspai": "少数派", "github_issues": "GitHub Issues",
+}
 
 
 async def run_all_fetchers() -> None:
-    """跑一遍所有 source,单个失败不影响其它。最后跑 AI 评分。"""
+    """调度任务入口,打印到日志。"""
+    async for msg in pipeline_events(trigger="scheduled"):
+        print(f"[pipeline] {msg}")
+
+
+async def pipeline_events(trigger: str = "manual"):
+    """async generator:逐步 yield 进度字符串。供调度任务和 SSE 共用。结束时写 refresh_log。"""
+    stats: dict[str, int] = {}
     for mod in (hackernews, v2ex, reddit, zhihu, sspai, github_issues):
-        name = mod.__name__.split(".")[-1]
+        key = mod.__name__.split(".")[-1]
+        name = SOURCE_NAMES.get(key, key)
+        yield f"正在抓取 {name}..."
         try:
             items = await mod.fetch()
-            n = db.insert_items(items)
-            print(f"[{name}] fetched {len(items)}, inserted {n}")
+            total, high = db.insert_items(items)
+            stats[name] = high  # 只计入选条数
+            yield f"✓ {name}: 抓取 {len(items)} 条, 入库 {total} 条, 入选 {high} 条"
         except Exception as e:
-            print(f"[{name}] pipeline error: {e}")
-    # 先翻译英文条目,再跑 AI 打分(都是同步,放线程里不阻塞 event loop)
-    try:
-        await asyncio.to_thread(translate_new_items)
-    except Exception as e:
-        print(f"[translate] error: {e}")
-    try:
-        await asyncio.to_thread(run_ai_scoring)
-    except Exception as e:
-        print(f"[ai] scoring error: {e}")
+            stats[name] = 0
+            yield f"✗ {name} 失败: {str(e)[:80]}"
+
+    async for m in translate_new_items():
+        yield m
+
+    async for m in run_ai_scoring():
+        yield m
+
+    db.log_refresh(trigger, sum(stats.values()), stats)
 
 
 scheduler = AsyncIOScheduler()
@@ -109,17 +141,21 @@ def index(
     show_starred: int | None = None,
     show_hidden: int | None = None,
     q: str | None = None,
+    only_ai: int | None = None,
     applied: int = 0,
 ):
     # applied=1 来自表单隐藏字段,区分"首次访问"和"提交了表单但 checkbox 未勾选"
     eff_starred = bool(show_starred) if applied else True
     eff_hidden = bool(show_hidden) if applied else False
+    # only_ai 默认 True(首次访问只看 AI 推荐),用户点按钮后可关
+    eff_only_ai = bool(only_ai) if applied else True
     rows = db.query_items(
         source=source or None,
         min_score=min_score,
         show_starred=eff_starred,
         show_hidden=eff_hidden,
         search=q or None,
+        only_ai=eff_only_ai,
     )
     return templates.TemplateResponse(
         request,
@@ -131,6 +167,7 @@ def index(
             "show_starred": 1 if eff_starred else 0,
             "show_hidden": 1 if eff_hidden else 0,
             "q": q or "",
+            "only_ai": 1 if eff_only_ai else 0,
         },
     )
 
@@ -143,6 +180,17 @@ def starred(request: Request):
         "starred.html",
         {"items": rows},
     )
+
+
+@app.get("/refresh/stream")
+async def refresh_stream():
+    async def event_gen():
+        async for msg in pipeline_events():
+            # 每条消息前加 "data: ",最后 \n\n 表示一条 SSE event
+            yield f"data: {msg}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_gen(), media_type="text/event-stream")
 
 
 @app.post("/star/{item_id}")

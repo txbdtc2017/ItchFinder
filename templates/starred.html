@@ -4,7 +4,7 @@
 <h2 class="text-lg font-bold text-gray-700 mb-4">已标记的条目 ({{ items|length }})</h2>
 
 {% for it in items %}
-<div class="bg-white rounded-lg shadow-sm p-4 mb-3 border-l-4 border-yellow-400 bg-yellow-50">
+<div data-item-card class="bg-white rounded-lg shadow-sm p-4 mb-3 card-starred">
   <div class="flex items-start justify-between gap-3">
     <div class="flex-1 min-w-0">
       <div class="flex items-center gap-2 mb-1">
@@ -51,11 +51,11 @@
       </div>
     </div>
 
-    <form method="post" action="/star/{{ it.id }}">
-      <button class="text-xs px-2 py-1 rounded border bg-yellow-100 text-yellow-700 border-yellow-300">
-        取消标记
-      </button>
-    </form>
+    <button type="button" onclick="starItem(this, {{ it.id }})"
+            data-starred="1" data-remove-on-unstar="1"
+            class="text-xs px-2 py-1 rounded border bg-yellow-100 text-yellow-700 border-yellow-300">
+      取消标记
+    </button>
   </div>
 </div>
 {% else %}
