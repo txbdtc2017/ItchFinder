@@ -10,10 +10,10 @@ from .base import UA
 
 SEARCH_URL = "https://api.github.com/search/issues"
 
-# 分两组关键词搜索,每组一次 API 调用
+# 分两组搜索,只要 feature request / UX 类,不要 bug 类
 QUERIES = [
-    '"doesn\'t work" OR "broken" OR "crash" OR "bug"',
-    '"frustrating" OR "annoying" OR "painful" OR "wish" OR "please fix"',
+    '"feature request" OR "please add" OR "would be nice" OR "wish this"',
+    '"hard to use" OR "confusing" OR "tedious" OR "would love" OR "please support"',
 ]
 
 

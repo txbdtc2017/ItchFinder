@@ -1,60 +1,36 @@
 {% extends "base.html" %}
 {% block content %}
 
-<!-- 平台快捷切换:点击即跳 -->
-<div class="flex flex-wrap items-center gap-2 mb-3">
-  {% for src, label in [('', '全部'), ('hackernews', 'HN'), ('v2ex', 'V2EX'), ('reddit', 'Reddit'), ('zhihu', '知乎'), ('sspai', '少数派'), ('github', 'GitHub'), ('devto', 'Dev.to'), ('lobsters', 'Lobsters'), ('stackoverflow', 'SO'), ('juejin', '掘金'), ('rss_tech', '科技RSS')] %}
-    <a href="?applied=1&source={{ src }}&min_score={{ min_score }}&show_starred={{ show_starred }}&show_hidden={{ show_hidden }}&only_ai={{ only_ai }}&q={{ q|urlencode }}"
-       class="text-sm px-3 py-1 rounded-full border
-              {% if source == src %}bg-indigo-600 text-white border-indigo-600{% else %}bg-white text-gray-600 border-gray-200 hover:bg-indigo-50 hover:border-indigo-300{% endif %}">
-      {{ label }}
+<div class="flex items-start gap-3 mb-6">
+  <!-- 左:平台 pill 流式排列 -->
+  <div class="flex flex-wrap gap-2 flex-1">
+    {% for src, label in [('', '全部'), ('hackernews', 'HN'), ('v2ex', 'V2EX'), ('reddit', 'Reddit'), ('zhihu', '知乎'), ('sspai', '少数派'), ('github', 'GitHub'), ('devto', 'Dev.to'), ('lobsters', 'Lobsters'), ('stackoverflow', 'SO'), ('juejin', '掘金'), ('rss_tech', '科技RSS')] %}
+      <a href="?applied=1&source={{ src }}&min_score={{ min_score }}&show_starred={{ show_starred }}&show_hidden={{ show_hidden }}&only_ai={{ only_ai }}&q={{ q|urlencode }}"
+         class="text-sm px-3 py-1 rounded-full border
+                {% if source == src %}bg-indigo-600 text-white border-indigo-600{% else %}bg-white text-gray-600 border-gray-200 hover:bg-indigo-50 hover:border-indigo-300{% endif %}">
+        {{ label }}
+      </a>
+    {% endfor %}
+  </div>
+
+  <!-- 右:AI 推荐 + 隐藏全部 纵向 -->
+  <div class="flex flex-col gap-2 flex-shrink-0">
+    <a href="?applied=1&source={{ source }}&min_score={{ min_score }}&show_starred={{ show_starred }}&show_hidden={{ show_hidden }}&only_ai={{ 0 if only_ai else 1 }}&q={{ q|urlencode }}"
+       class="text-sm px-3 py-1 rounded-full border text-center
+              {% if only_ai %}bg-purple-600 text-white border-purple-600{% else %}bg-white text-purple-600 border-purple-300 hover:bg-purple-50{% endif %}">
+      {% if only_ai %}✓ 仅 AI 推荐{% else %}仅看 AI 推荐{% endif %}
     </a>
-  {% endfor %}
-
-  <!-- AI 推荐切换 -->
-  <a href="?applied=1&source={{ source }}&min_score={{ min_score }}&show_starred={{ show_starred }}&show_hidden={{ show_hidden }}&only_ai={{ 0 if only_ai else 1 }}&q={{ q|urlencode }}"
-     class="ml-auto text-sm px-3 py-1 rounded-full border
-            {% if only_ai %}bg-purple-600 text-white border-purple-600{% else %}bg-white text-purple-600 border-purple-300 hover:bg-purple-50{% endif %}">
-    {% if only_ai %}✓ 仅 AI 推荐{% else %}仅看 AI 推荐{% endif %}
-  </a>
+    <button type="button" onclick="hideAllVisible(this)"
+            data-source="{{ source }}"
+            data-min-score="{{ min_score }}"
+            data-show-starred="{{ show_starred }}"
+            data-only-ai="{{ only_ai }}"
+            data-q="{{ q }}"
+            class="text-sm px-3 py-1 rounded-full border bg-white text-red-600 border-red-300 hover:bg-red-50">
+      隐藏全部
+    </button>
+  </div>
 </div>
-
-<!-- 其它筛选(搜索/最低分/勾选) -->
-<form method="get" action="/" class="bg-white rounded-lg shadow-sm p-4 mb-6 flex flex-wrap items-end gap-4">
-  <input type="hidden" name="applied" value="1">
-  <input type="hidden" name="source" value="{{ source }}">
-  <input type="hidden" name="only_ai" value="{{ only_ai }}">
-
-  <div>
-    <label class="block text-xs text-gray-500 mb-1">最低分</label>
-    <input type="number" name="min_score" value="{{ min_score }}" min="0"
-           class="border rounded px-2 py-1 text-sm w-16">
-  </div>
-
-  <div class="flex items-center gap-3">
-    <label class="flex items-center gap-1 text-sm">
-      <input type="checkbox" name="show_starred" value="1"
-             {% if show_starred %}checked{% endif %}>
-      显示已标记
-    </label>
-    <label class="flex items-center gap-1 text-sm">
-      <input type="checkbox" name="show_hidden" value="1"
-             {% if show_hidden %}checked{% endif %}>
-      显示已隐藏
-    </label>
-  </div>
-
-  <div class="flex-1 min-w-[160px]">
-    <label class="block text-xs text-gray-500 mb-1">搜索</label>
-    <input type="text" name="q" value="{{ q }}" placeholder="标题 / 内容关键词"
-           class="border rounded px-2 py-1 text-sm w-full">
-  </div>
-
-  <button type="submit"
-          class="bg-indigo-600 text-white px-4 py-1 rounded text-sm hover:bg-indigo-700">
-    应用
-  </button>
-</form>
 
 <!-- 结果计数 -->
 <p class="text-sm text-gray-400 mb-3">共 {{ items|length }} 条</p>

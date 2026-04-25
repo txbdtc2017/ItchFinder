@@ -119,10 +119,11 @@ async def pipeline_events(trigger: str = "manual"):
             stats[name] = 0
             yield f"✗ {name} 失败: {str(e)[:80]}"
 
-    async for m in translate_new_items():
+    # 先 AI 评分(决定 ai_flagged),再翻译(只翻被推荐的),省时省钱
+    async for m in run_ai_scoring():
         yield m
 
-    async for m in run_ai_scoring():
+    async for m in translate_new_items():
         yield m
 
     db.log_refresh(trigger, sum(stats.values()), stats)
@@ -220,6 +221,25 @@ def star(item_id: int, request: Request):
 def hide(item_id: int, request: Request):
     db.toggle_hidden(item_id)
     return RedirectResponse(request.headers.get("referer", "/"), status_code=303)
+
+
+@app.post("/hide_all")
+async def hide_all(request: Request):
+    body = await request.json()
+    applied = int(body.get("applied", 0))
+    only_ai = body.get("only_ai")
+    show_starred = body.get("show_starred")
+    eff_starred = bool(show_starred) if applied else True
+    eff_only_ai = bool(only_ai) if applied else True
+    n = db.hide_all_matching(
+        source=body.get("source") or None,
+        min_score=int(body.get("min_score", 1)),
+        show_starred=eff_starred,
+        show_hidden=False,
+        search=body.get("q") or None,
+        only_ai=eff_only_ai,
+    )
+    return {"hidden": n}
 
 
 @app.post("/translate")

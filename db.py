@@ -154,6 +154,36 @@ def toggle_hidden(item_id: int) -> None:
         )
 
 
+def hide_all_matching(
+    source: str | None = None,
+    min_score: int = 1,
+    show_starred: bool = True,
+    show_hidden: bool = False,
+    search: str | None = None,
+    only_ai: bool = False,
+) -> int:
+    """把当前 query_items 筛出来的 + 还没隐藏的全部 is_hidden=1。返回受影响行数。"""
+    sql = "UPDATE items SET is_hidden = 1 WHERE pain_score >= ? AND is_hidden = 0"
+    params: list = [min_score]
+    if source:
+        sql += " AND source = ?"
+        params.append(source)
+    if not show_starred:
+        sql += " AND is_starred = 0"
+    if not show_hidden:
+        # show_hidden=False 时本来就过滤掉已隐藏,is_hidden=0 已加,跳过
+        pass
+    if only_ai:
+        sql += " AND ai_flagged = 1"
+    if search:
+        sql += " AND (LOWER(title) LIKE ? OR LOWER(COALESCE(content, '')) LIKE ?)"
+        kw = f"%{search.lower()}%"
+        params.extend([kw, kw])
+    with get_conn() as conn:
+        cur = conn.execute(sql, params)
+        return cur.rowcount
+
+
 def get_unscored_items(limit: int = 100) -> list[sqlite3.Row]:
     """取 pain_score > 0 且未被 AI 评估过的条目。"""
     with get_conn() as conn:
@@ -166,15 +196,15 @@ def get_unscored_items(limit: int = 100) -> list[sqlite3.Row]:
 
 
 def get_untranslated(sources: list[str], limit: int = 200) -> list[sqlite3.Row]:
-    """取指定 source 中未翻译的条目。高分优先,用户看得见的先翻译。"""
+    """取指定 source 中 AI 推荐过且未翻译的条目。非推荐条目不翻,省时间。"""
     if not sources:
         return []
     placeholders = ",".join("?" for _ in sources)
     with get_conn() as conn:
         return conn.execute(
             f"SELECT id, title, content FROM items "
-            f"WHERE source IN ({placeholders}) AND is_translated = 0 "
-            f"ORDER BY pain_score DESC, id DESC LIMIT ?",
+            f"WHERE source IN ({placeholders}) AND is_translated = 0 AND ai_flagged = 1 "
+            f"ORDER BY id DESC LIMIT ?",
             [*sources, limit],
         ).fetchall()
 

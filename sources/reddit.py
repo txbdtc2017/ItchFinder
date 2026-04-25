@@ -19,16 +19,15 @@ BROWSER_UA = (
 )
 
 SUBREDDITS = [
-    "SideProject",
-    "Entrepreneur",
-    "SaaS",
-    "indiehackers",
-    "smallbusiness",
-    "webdev",
-    "startups",
-    "productivity",
-    "selfhosted",
-    "programming",
+    # 创业/独立开发
+    "SideProject", "Entrepreneur", "SaaS", "indiehackers", "smallbusiness",
+    # 开发/技术
+    "webdev", "startups", "programming", "selfhosted",
+    # 工作流 / 产品使用(痛点聚集地)
+    "productivity", "Automation", "apps", "androidapps", "iphone",
+    "software",
+    # 产品专属 subs(吐槽具体软件)
+    "Notion", "Slack", "jira", "Obsidian", "figma", "discordapp",
 ]
 
 URL_TMPL = "https://old.reddit.com/r/{sub}/new.json?limit=50"

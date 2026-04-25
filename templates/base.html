@@ -145,6 +145,34 @@
     const card = btn.closest('[data-item-card]');
     if (card) card.remove();
   }
+
+  async function hideAllVisible(btn) {
+    if (!confirm('确认把当前显示的所有条目隐藏?')) return;
+    const original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '处理中...';
+    try {
+      const r = await fetch('/hide_all', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          applied: 1,
+          source: btn.dataset.source,
+          min_score: btn.dataset.minScore,
+          show_starred: btn.dataset.showStarred,
+          only_ai: btn.dataset.onlyAi,
+          q: btn.dataset.q,
+        }),
+      });
+      const data = await r.json();
+      btn.textContent = `已隐藏 ${data.hidden}`;
+      setTimeout(() => location.reload(), 600);
+    } catch(e) {
+      btn.textContent = '失败';
+      btn.disabled = false;
+      setTimeout(() => btn.textContent = original, 1500);
+    }
+  }
   </script>
   <style>
     .card-starred { border-left: 4px solid #facc15; background-color: #fefce8; }
