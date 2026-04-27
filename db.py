@@ -57,7 +57,9 @@ def init_db() -> None:
 
 
 def insert_items(items: list[dict]) -> tuple[int, int]:
-    """批量插入,(source, external_id) 已存在的跳过。
+    """批量插入。两层去重:
+    1) (source, external_id) 已存在 → 跳过(SQL UNIQUE)
+    2) (source, title) 已存在 → 跳过(应用层,处理 Reddit 同一帖子跨 sub 重复)
     返回 (新插入总数, 其中 pain_score>=1 的条数)。
     """
     if not items:
@@ -70,6 +72,14 @@ def insert_items(items: list[dict]) -> tuple[int, int]:
     new_high = 0
     with get_conn() as conn:
         for it in items:
+            # 标题级去重:同 source + 同 title 已有就跳过
+            dup = conn.execute(
+                "SELECT 1 FROM items WHERE source = ? AND title = ? LIMIT 1",
+                (it["source"], it["title"]),
+            ).fetchone()
+            if dup:
+                continue
+
             score, matched = score_item(it["title"], it.get("content"))
             cur = conn.execute(
                 """
@@ -139,18 +149,34 @@ def query_starred(limit: int = 500) -> list[sqlite3.Row]:
 
 
 def toggle_starred(item_id: int) -> None:
+    """按 (source, title) 联动:Reddit 等跨 sub 重复时,同标题一起切换。"""
     with get_conn() as conn:
-        conn.execute(
-            "UPDATE items SET is_starred = 1 - is_starred WHERE id = ?",
+        row = conn.execute(
+            "SELECT source, title, is_starred FROM items WHERE id = ?",
             (item_id,),
+        ).fetchone()
+        if not row:
+            return
+        new_state = 0 if row["is_starred"] else 1
+        conn.execute(
+            "UPDATE items SET is_starred = ? WHERE source = ? AND title = ?",
+            (new_state, row["source"], row["title"]),
         )
 
 
 def toggle_hidden(item_id: int) -> None:
+    """按 (source, title) 联动。"""
     with get_conn() as conn:
-        conn.execute(
-            "UPDATE items SET is_hidden = 1 - is_hidden WHERE id = ?",
+        row = conn.execute(
+            "SELECT source, title, is_hidden FROM items WHERE id = ?",
             (item_id,),
+        ).fetchone()
+        if not row:
+            return
+        new_state = 0 if row["is_hidden"] else 1
+        conn.execute(
+            "UPDATE items SET is_hidden = ? WHERE source = ? AND title = ?",
+            (new_state, row["source"], row["title"]),
         )
 
 

@@ -17,6 +17,23 @@
     </button>
   </nav>
 
+  <!-- 通用确认弹窗 -->
+  <div id="confirm-overlay" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center transition-opacity">
+    <div class="bg-white rounded-lg shadow-xl w-80 overflow-hidden transform transition-all">
+      <div class="px-5 py-4 border-b border-gray-100">
+        <h4 class="text-sm font-semibold text-gray-800">操作确认</h4>
+      </div>
+      <p id="confirm-msg" class="px-5 py-4 text-sm text-gray-600"></p>
+      <div class="px-5 py-3 bg-gray-50 flex justify-end gap-2">
+        <button id="confirm-cancel" class="text-sm px-3 py-1 rounded border border-gray-300 text-gray-600 hover:bg-gray-100">取消</button>
+        <button id="confirm-ok" class="text-sm px-3 py-1 rounded bg-red-600 text-white hover:bg-red-700">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast 通知 -->
+  <div id="toast" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg shadow-lg text-sm text-white"></div>
+
   <!-- 刷新进度浮层 -->
   <div id="refresh-overlay" class="hidden fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
     <div class="bg-white rounded-lg shadow-xl w-96 max-h-[80vh] overflow-hidden">
@@ -146,8 +163,39 @@
     if (card) card.remove();
   }
 
+  // 自定义确认弹窗:返回 Promise<boolean>
+  function showConfirm(message) {
+    return new Promise(resolve => {
+      const overlay = document.getElementById('confirm-overlay');
+      const msg = document.getElementById('confirm-msg');
+      const ok = document.getElementById('confirm-ok');
+      const cancel = document.getElementById('confirm-cancel');
+      msg.textContent = message;
+      overlay.classList.remove('hidden');
+      const cleanup = (result) => {
+        overlay.classList.add('hidden');
+        ok.onclick = null;
+        cancel.onclick = null;
+        overlay.onclick = null;
+        resolve(result);
+      };
+      ok.onclick = () => cleanup(true);
+      cancel.onclick = () => cleanup(false);
+      overlay.onclick = (e) => { if (e.target === overlay) cleanup(false); };
+    });
+  }
+
+  // Toast 通知
+  function showToast(message, type = 'success') {
+    const t = document.getElementById('toast');
+    t.textContent = message;
+    t.className = `fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg shadow-lg text-sm text-white ${type === 'error' ? 'bg-red-600' : 'bg-gray-800'}`;
+    setTimeout(() => t.classList.add('hidden'), 1800);
+  }
+
   async function hideAllVisible(btn) {
-    if (!confirm('确认把当前显示的所有条目隐藏?')) return;
+    const ok = await showConfirm('确认把当前显示的所有条目隐藏?');
+    if (!ok) return;
     const original = btn.textContent;
     btn.disabled = true;
     btn.textContent = '处理中...';
@@ -165,11 +213,12 @@
         }),
       });
       const data = await r.json();
-      btn.textContent = `已隐藏 ${data.hidden}`;
-      setTimeout(() => location.reload(), 600);
+      showToast(`已隐藏 ${data.hidden} 条`);
+      setTimeout(() => location.reload(), 800);
     } catch(e) {
       btn.textContent = '失败';
       btn.disabled = false;
+      showToast('操作失败', 'error');
       setTimeout(() => btn.textContent = original, 1500);
     }
   }
