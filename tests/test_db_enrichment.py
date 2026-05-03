@@ -1,3 +1,4 @@
+import sqlite3
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -101,6 +102,13 @@ class EnrichmentDatabaseTests(unittest.TestCase):
             ).fetchone()
         self.assertIn("用户痛点", row["ai_summary"])
         self.assertIsNotNone(row["ai_summary_at"])
+
+    def test_get_conn_context_manager_closes_connection(self):
+        with db.get_conn() as conn:
+            conn.execute("SELECT 1")
+
+        with self.assertRaises(sqlite3.ProgrammingError):
+            conn.execute("SELECT 1")
 
 
 if __name__ == "__main__":
