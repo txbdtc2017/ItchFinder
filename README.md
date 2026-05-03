@@ -44,6 +44,20 @@ python main.py
 
 启动后立即抓取一次，之后每小时自动抓取。数据存在 `data.db`，重启不丢失。
 
+## Scrapling 上下文补全
+
+刷新流程会先抓取数据,再对 Reddit / Hacker News / GitHub Issues 的高信号候选使用 Scrapling 解析页面上下文,然后再交给 AI 评分。
+
+第一版补全规则:
+
+- 每次刷新最多补全 30 条候选
+- 候选要求 `pain_score > 0`
+- 只处理 `reddit`、`hackernews`、`github`
+- 补全失败不会中断刷新,24 小时后重试
+- AI 推荐条目会额外生成中文总结
+
+当前版本只使用 Scrapling parser,抓取仍由 `httpx` 完成。
+
 ## 改关键词
 
 编辑 `keywords.py` 里的 `PAIN_KEYWORDS_ZH` 和 `PAIN_KEYWORDS_EN` 列表，保存即可。下次抓取的新数据会用新关键词打分（已入库的不会重新打分）。
