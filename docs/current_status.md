@@ -23,6 +23,10 @@
 - Hacker News enrichment now uses `external_id` to fetch the HN discussion page instead of the external article URL.
 - Empty enrichment results are marked `skipped`, not `failed`, so they do not repeat as noisy failures.
 - Main and starred lists use server-side pagination with `10` items per page.
+- Enrichment candidate selection excludes rows already AI-scored and not recommended.
+- Refresh now runs pre-AI high-score enrichment, AI scoring, AI-recommended enrichment, AI summary, then translation.
+- A bounded background enrichment job runs every 2 minutes with batch size `20` and skips if another enrichment pass is active.
+- SQLite WAL mode is set during DB initialization; runtime connections use a busy timeout to reduce read/write contention.
 - Latest Docker runtime is running and reachable at `http://127.0.0.1:18081/`.
 
 ## Active References
@@ -31,11 +35,13 @@
 - Plan: `docs/superpowers/plans/2026-05-03-scrapling-enrichment.md`
 - Pagination spec: `docs/superpowers/specs/2026-05-03-list-pagination-design.md`
 - Pagination plan: `docs/superpowers/plans/2026-05-03-list-pagination.md`
+- Background enrichment spec: `docs/superpowers/specs/2026-05-03-background-enrichment-design.md`
+- Background enrichment plan: `docs/superpowers/plans/2026-05-03-background-enrichment.md`
 - Read the spec or plan only when changing requirements, reviewing decisions, or resuming task execution.
 
 ## Verification
 
-- `.venv/bin/python -m unittest discover -s tests` passes 41 tests.
+- `.venv/bin/python -m unittest discover -s tests` passes 46 tests.
 - `docker compose config --quiet`
 - `docker compose up -d --build itchfinder`
 - `curl -fsS http://127.0.0.1:18081/`
@@ -43,6 +49,8 @@
 - Latest Scrapling Docker run completed `29` success, `0` failure, `1` skipped.
 - Current homepage no longer renders `补全失败` labels after historical empty/blocked failures were reset to pending.
 - Latest pagination check loaded page `2` for Reddit with pagination controls rendered.
+- Latest background enrichment candidate check: `300` eligible rows after Docker verification.
+- Latest runtime logs show `Scrapling推荐补齐` completed `20` success, `0` failure, and background enrichment skipped while that pass was active.
 
 ## Notes
 

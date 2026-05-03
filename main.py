@@ -4,7 +4,7 @@ import json
 import os
 import socket
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -39,6 +39,9 @@ from translator import translate_new_items
 BASE_DIR = Path(__file__).parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 PAGE_SIZE = 10
+PRE_AI_ENRICHMENT_LIMIT = 10
+POST_AI_ENRICHMENT_LIMIT = 20
+BACKGROUND_ENRICHMENT_LIMIT = 20
 
 
 def rel_time(iso: str | None) -> str:
@@ -105,6 +108,16 @@ async def run_all_fetchers() -> None:
         print(f"[pipeline] {msg}")
 
 
+async def run_background_enrichment() -> None:
+    async for msg in enrich_new_candidates(
+        limit=BACKGROUND_ENRICHMENT_LIMIT,
+        mode="background",
+        label="Scrapling后台补齐",
+        skip_if_busy=True,
+    ):
+        print(f"[background-enrichment] {msg}")
+
+
 async def pipeline_events(trigger: str = "manual"):
     """async generator:逐步 yield 进度字符串。供调度任务和 SSE 共用。结束时写 refresh_log。"""
     stats: dict[str, int] = {}
@@ -124,11 +137,22 @@ async def pipeline_events(trigger: str = "manual"):
             stats[name] = 0
             yield f"✗ {name} 失败: {str(e)[:80]}"
 
-    async for m in enrich_new_candidates(limit=30):
+    async for m in enrich_new_candidates(
+        limit=PRE_AI_ENRICHMENT_LIMIT,
+        mode="pre_ai",
+        label="Scrapling预补齐",
+    ):
         yield m
 
-    # 先补全上下文,再 AI 评分(决定 ai_flagged),再翻译(只翻被推荐的),省时省钱
+    # 高分候选先补上下文再评分;AI 推荐项再补一次,让总结尽量拿到上下文。
     async for m in run_ai_scoring():
+        yield m
+
+    async for m in enrich_new_candidates(
+        limit=POST_AI_ENRICHMENT_LIMIT,
+        mode="ai_flagged",
+        label="Scrapling推荐补齐",
+    ):
         yield m
 
     async for m in summarize_ai_flagged():
@@ -151,6 +175,15 @@ async def lifespan(app: FastAPI):
         "interval",
         hours=1,
         next_run_time=datetime.now(),
+    )
+    scheduler.add_job(
+        run_background_enrichment,
+        "interval",
+        minutes=2,
+        next_run_time=datetime.now() + timedelta(minutes=2),
+        id="background_enrichment",
+        max_instances=1,
+        coalesce=True,
     )
     scheduler.start()
     try:

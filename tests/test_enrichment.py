@@ -253,6 +253,40 @@ class EnrichmentParserTests(unittest.TestCase):
         mark_failed.assert_not_called()
         mark_skipped.assert_called_once_with(3, "no extractable context")
 
+    def test_enrich_new_candidates_passes_candidate_mode_to_database(self):
+        async def run():
+            with mock.patch("db.get_enrichment_candidates", return_value=[]) as get_candidates:
+                messages = []
+                async for message in enrichment.enrich_new_candidates(
+                    limit=7,
+                    mode="ai_flagged",
+                    label="Scrapling推荐补齐",
+                ):
+                    messages.append(message)
+            return messages, get_candidates
+
+        messages, get_candidates = asyncio.run(run())
+
+        get_candidates.assert_called_once_with(limit=7, mode="ai_flagged")
+        self.assertEqual(messages, ["Scrapling推荐补齐: 没有需要补全的候选"])
+
+    def test_background_enrichment_skips_when_another_enrichment_job_is_busy(self):
+        async def run():
+            await enrichment._ENRICHMENT_LOCK.acquire()
+            try:
+                with mock.patch("db.get_enrichment_candidates") as get_candidates:
+                    messages = []
+                    async for message in enrichment.enrich_new_candidates(skip_if_busy=True):
+                        messages.append(message)
+                return messages, get_candidates
+            finally:
+                enrichment._ENRICHMENT_LOCK.release()
+
+        messages, get_candidates = asyncio.run(run())
+
+        self.assertEqual(messages, ["Scrapling: 已有补齐任务运行,跳过本轮"])
+        get_candidates.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

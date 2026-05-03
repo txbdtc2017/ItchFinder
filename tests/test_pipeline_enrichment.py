@@ -24,9 +24,9 @@ class PipelineEnrichmentOrderTests(unittest.TestCase):
         async def empty_fetch():
             return []
 
-        async def fake_enrich_new_candidates(limit=30):
-            events.append("enrich")
-            yield "Scrapling: done"
+        async def fake_enrich_new_candidates(limit=30, mode="background", label="Scrapling", skip_if_busy=False):
+            events.append(f"enrich:{mode}")
+            yield f"{label}: done"
 
         async def fake_run_ai_scoring():
             events.append("ai")
@@ -63,8 +63,9 @@ class PipelineEnrichmentOrderTests(unittest.TestCase):
 
         messages, insert_items, log_refresh = asyncio.run(run())
 
-        self.assertEqual(events, ["enrich", "ai", "summary", "translate"])
-        self.assertIn("Scrapling: done", messages)
+        self.assertEqual(events, ["enrich:pre_ai", "ai", "enrich:ai_flagged", "summary", "translate"])
+        self.assertIn("Scrapling预补齐: done", messages)
+        self.assertIn("Scrapling推荐补齐: done", messages)
         insert_items.assert_called()
         log_refresh.assert_called_once()
 

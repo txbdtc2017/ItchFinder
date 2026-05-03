@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 DB_PATH = Path(__file__).parent / "data.db"
+HIGH_ENRICHMENT_SCORE = 3
 
 
 class ClosingConnection(sqlite3.Connection):
@@ -16,15 +17,16 @@ class ClosingConnection(sqlite3.Connection):
 
 
 def get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH, factory=ClosingConnection)
+    conn = sqlite3.connect(DB_PATH, timeout=30, factory=ClosingConnection)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=30000")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
 
 def init_db() -> None:
     with get_conn() as conn:
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript("""
         CREATE TABLE IF NOT EXISTS items (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -288,19 +290,36 @@ def get_unscored_items(limit: int = 100) -> list[sqlite3.Row]:
         ).fetchall()
 
 
-def get_enrichment_candidates(limit: int = 30, cooldown_hours: int = 24) -> list[sqlite3.Row]:
+def get_enrichment_candidates(
+    limit: int = 30,
+    cooldown_hours: int = 24,
+    mode: str = "background",
+) -> list[sqlite3.Row]:
     """取需要补全上下文的高信号候选。失败项过冷却期后重试。"""
+    if mode == "pre_ai":
+        mode_sql = "ai_scored = 0 AND pain_score >= ?"
+        mode_params = [HIGH_ENRICHMENT_SCORE]
+    elif mode == "ai_flagged":
+        mode_sql = "ai_flagged = 1"
+        mode_params = []
+    elif mode == "background":
+        mode_sql = "(ai_flagged = 1 OR (ai_scored = 0 AND pain_score >= ?))"
+        mode_params = [HIGH_ENRICHMENT_SCORE]
+    else:
+        raise ValueError(f"unknown enrichment candidate mode: {mode}")
+
     cutoff = (
         datetime.now(timezone.utc) - timedelta(hours=cooldown_hours)
     ).isoformat()
     with get_conn() as conn:
         return conn.execute(
-            """
+            f"""
             SELECT id, source, external_id, title, content, url, pain_score, enriched_content,
-                   enriched_at, enrichment_status, enrichment_error
+                   enriched_at, enrichment_status, enrichment_error, ai_scored, ai_flagged
             FROM items
             WHERE pain_score > 0
               AND source IN ('reddit', 'hackernews', 'github')
+              AND ({mode_sql})
               AND COALESCE(enrichment_status, 'pending') != 'done'
               AND (
                     COALESCE(enrichment_status, 'pending') = 'pending'
@@ -309,10 +328,17 @@ def get_enrichment_candidates(limit: int = 30, cooldown_hours: int = 24) -> list
                         AND COALESCE(enriched_at, '') <= ?
                     )
                   )
-            ORDER BY pain_score DESC, created_at DESC
+            ORDER BY
+                CASE
+                    WHEN ai_scored = 0 AND pain_score >= {HIGH_ENRICHMENT_SCORE} THEN 0
+                    WHEN ai_flagged = 1 THEN 1
+                    ELSE 2
+                END,
+                pain_score DESC,
+                created_at DESC
             LIMIT ?
             """,
-            (cutoff, limit),
+            (*mode_params, cutoff, limit),
         ).fetchall()
 
 

@@ -1,4 +1,5 @@
 """Scrapling-backed context enrichment for high-signal items."""
+import asyncio
 import re
 from collections.abc import AsyncIterator
 
@@ -12,6 +13,7 @@ DEFAULT_LIMIT = 30
 POST_LIMIT = 800
 COMMENT_LIMIT = 300
 MAX_COMMENTS = 5
+_ENRICHMENT_LOCK = asyncio.Lock()
 
 COMMON_HEADERS = {
     "User-Agent": "ItchFinder/0.1 enrichment",
@@ -185,28 +187,38 @@ async def enrich_item(client: httpx.AsyncClient, row) -> str:
     return ""
 
 
-async def enrich_new_candidates(limit: int = DEFAULT_LIMIT) -> AsyncIterator[str]:
-    rows = db.get_enrichment_candidates(limit=limit)
-    if not rows:
-        yield "Scrapling: 没有需要补全的候选"
+async def enrich_new_candidates(
+    limit: int = DEFAULT_LIMIT,
+    mode: str = "background",
+    label: str = "Scrapling",
+    skip_if_busy: bool = False,
+) -> AsyncIterator[str]:
+    if skip_if_busy and _ENRICHMENT_LOCK.locked():
+        yield f"{label}: 已有补齐任务运行,跳过本轮"
         return
 
-    yield f"Scrapling: 提交 {len(rows)} 条候选补全上下文..."
-    done = 0
-    failed = 0
-    skipped = 0
-    async with httpx.AsyncClient() as client:
-        for row in rows:
-            try:
-                content = trim_text(await enrich_item(client, row), 4000)
-                if content:
-                    db.mark_enriched(row["id"], content)
-                    done += 1
-                else:
-                    db.mark_enrichment_skipped(row["id"], "no extractable context")
-                    skipped += 1
-            except Exception as exc:
-                db.mark_enrichment_failed(row["id"], str(exc))
-                failed += 1
+    async with _ENRICHMENT_LOCK:
+        rows = db.get_enrichment_candidates(limit=limit, mode=mode)
+        if not rows:
+            yield f"{label}: 没有需要补全的候选"
+            return
 
-    yield f"✓ Scrapling 补全完成: {done} 条成功, {failed} 条失败, {skipped} 条跳过"
+        yield f"{label}: 提交 {len(rows)} 条候选补全上下文..."
+        done = 0
+        failed = 0
+        skipped = 0
+        async with httpx.AsyncClient() as client:
+            for row in rows:
+                try:
+                    content = trim_text(await enrich_item(client, row), 4000)
+                    if content:
+                        db.mark_enriched(row["id"], content)
+                        done += 1
+                    else:
+                        db.mark_enrichment_skipped(row["id"], "no extractable context")
+                        skipped += 1
+                except Exception as exc:
+                    db.mark_enrichment_failed(row["id"], str(exc))
+                    failed += 1
+
+        yield f"✓ {label}完成: {done} 条成功, {failed} 条失败, {skipped} 条跳过"
