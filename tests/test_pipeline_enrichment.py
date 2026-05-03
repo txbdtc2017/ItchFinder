@@ -32,6 +32,10 @@ class PipelineEnrichmentOrderTests(unittest.TestCase):
             events.append("ai")
             yield "AI: done"
 
+        async def fake_summarize_ai_flagged():
+            events.append("summary")
+            yield "AI总结: done"
+
         async def fake_translate_new_items():
             events.append("translate")
             yield "translate: done"
@@ -52,13 +56,14 @@ class PipelineEnrichmentOrderTests(unittest.TestCase):
                  mock.patch.object(main.db, "log_refresh") as log_refresh, \
                  mock.patch.object(main, "enrich_new_candidates", side_effect=fake_enrich_new_candidates), \
                  mock.patch.object(main, "run_ai_scoring", side_effect=fake_run_ai_scoring), \
+                 mock.patch.object(main, "summarize_ai_flagged", side_effect=fake_summarize_ai_flagged), \
                  mock.patch.object(main, "translate_new_items", side_effect=fake_translate_new_items):
                 messages = [message async for message in main.pipeline_events(trigger="manual")]
             return messages, insert_items, log_refresh
 
         messages, insert_items, log_refresh = asyncio.run(run())
 
-        self.assertEqual(events, ["enrich", "ai", "translate"])
+        self.assertEqual(events, ["enrich", "ai", "summary", "translate"])
         self.assertIn("Scrapling: done", messages)
         insert_items.assert_called()
         log_refresh.assert_called_once()

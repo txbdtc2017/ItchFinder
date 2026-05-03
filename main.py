@@ -18,7 +18,7 @@ from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 
 import db
-from ai_scorer import run_ai_scoring
+from ai_scorer import run_ai_scoring, summarize_ai_flagged
 from enrichment import enrich_new_candidates
 from sources import (
     devto,
@@ -127,6 +127,9 @@ async def pipeline_events(trigger: str = "manual"):
 
     # 先补全上下文,再 AI 评分(决定 ai_flagged),再翻译(只翻被推荐的),省时省钱
     async for m in run_ai_scoring():
+        yield m
+
+    async for m in summarize_ai_flagged():
         yield m
 
     async for m in translate_new_items():
