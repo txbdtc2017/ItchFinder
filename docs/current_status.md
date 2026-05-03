@@ -18,6 +18,8 @@
 - Current project directory is bind-mounted to `/app`, so `data.db` remains in the project root.
 - Scrapling enrichment is integrated as parser-only context enrichment for Reddit, Hacker News, and GitHub Issues.
 - Refresh flow is fetch -> insert -> Scrapling enrichment -> AI scoring -> AI summary -> translation -> refresh log.
+- RSS feeds are fetched with explicit `httpx` timeouts so one slow feed cannot block the refresh pipeline.
+- Latest Docker runtime is running and reachable at `http://127.0.0.1:18081/`.
 
 ## Active References
 
@@ -27,11 +29,11 @@
 
 ## Verification
 
-- `.venv/bin/python -m unittest discover -s tests`
+- `.venv/bin/python -m unittest discover -s tests` passes 27 tests.
 - `docker compose config --quiet`
-- `docker compose build itchfinder`
-- `docker compose up -d itchfinder`
+- `docker compose up -d --build itchfinder`
 - `curl -fsS http://127.0.0.1:18081/`
+- Latest startup pipeline reached Scrapling enrichment and AI summary without crashing.
 
 ## Notes
 
