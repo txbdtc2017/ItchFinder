@@ -1,0 +1,16 @@
+services:
+  itchfinder:
+    build:
+      context: .
+    container_name: itchfinder
+    env_file:
+      - .env
+    environment:
+      - ITCHFINDER_HOST=0.0.0.0
+      - ITCHFINDER_PORT=8000
+      - ITCHFINDER_PUBLIC_URL=http://127.0.0.1:18081
+    ports:
+      - "18081:8000"
+    volumes:
+      - .:/app
+    restart: unless-stopped

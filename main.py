@@ -1,6 +1,8 @@
 """FastAPI 入口:调度、pipeline、路由。"""
 import asyncio
 import json
+import os
+import socket
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -260,7 +262,54 @@ async def translate_text(request: Request):
     return {"translated": translated}
 
 
+def _localhost_port_available(port: int) -> bool:
+    try:
+        with socket.create_connection(("localhost", port), timeout=0.2):
+            return False
+    except OSError:
+        pass
+
+    probes = [("127.0.0.1", socket.AF_INET)]
+    if socket.has_ipv6:
+        probes.append(("::1", socket.AF_INET6))
+
+    for host, family in probes:
+        try:
+            with socket.socket(family, socket.SOCK_STREAM) as sock:
+                sock.bind((host, port))
+        except OSError:
+            return False
+    return True
+
+
+def _find_local_port(start_port: int = 8000, max_attempts: int = 50) -> int:
+    for port in range(start_port, start_port + max_attempts):
+        if _localhost_port_available(port):
+            return port
+    end_port = start_port + max_attempts - 1
+    raise RuntimeError(f"No available localhost port in range {start_port}-{end_port}")
+
+
+def _resolve_bind_address() -> tuple[str, int]:
+    host = os.getenv("ITCHFINDER_HOST", "127.0.0.1")
+    start_port = int(os.getenv("ITCHFINDER_PORT", "8000"))
+    if host in {"127.0.0.1", "localhost"}:
+        return host, _find_local_port(start_port)
+    return host, start_port
+
+
+def _resolve_public_url(host: str, port: int) -> str:
+    if public_url := os.getenv("ITCHFINDER_PUBLIC_URL"):
+        return public_url
+    open_host = "127.0.0.1" if host == "0.0.0.0" else host
+    return f"http://{open_host}:{port}"
+
+
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)
+    host, port = _resolve_bind_address()
+    if port != 8000:
+        print(f"[ItchFinder] localhost:8000 is busy; using 127.0.0.1:{port}", flush=True)
+    print(f"[ItchFinder] Open {_resolve_public_url(host, port)}", flush=True)
+    uvicorn.run("main:app", host=host, port=port, reload=False)
