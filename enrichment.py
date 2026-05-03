@@ -19,6 +19,13 @@ COMMON_HEADERS = {
 }
 
 
+def _row_value(row, key: str, default: str | None = None):
+    try:
+        return row[key]
+    except (KeyError, IndexError):
+        return default
+
+
 def trim_text(text: str | None, limit: int) -> str:
     normalized = re.sub(r"\s+", " ", text or "").strip()
     return normalized[:limit]
@@ -53,7 +60,9 @@ def extract_reddit_context(html: str, url: str) -> str:
         [
             "[data-test-id='post-content']",
             "[data-testid='post-content']",
-            "div.usertext-body",
+            "div.thing.link div.usertext-body",
+            "div.link div.usertext-body",
+            "div.thing.link div.md",
             "div[data-click-id='text']",
         ],
         POST_LIMIT,
@@ -81,6 +90,18 @@ def extract_hn_context(html: str, url: str) -> str:
         COMMENT_LIMIT,
     )
     return _format_context(None, comments[:8])
+
+
+def reddit_old_url(url: str) -> str:
+    return re.sub(r"https://(www\.)?reddit\.com", "https://old.reddit.com", url, count=1)
+
+
+def hn_discussion_url(row) -> str:
+    external_id = str(_row_value(row, "external_id") or "").strip()
+    if external_id:
+        return f"https://news.ycombinator.com/item?id={external_id}"
+    url = _row_value(row, "url", "") or ""
+    return url
 
 
 def github_comments_api_url(url: str) -> str | None:
@@ -143,11 +164,24 @@ async def enrich_item(client: httpx.AsyncClient, row) -> str:
             return _format_context(base, comments)
         html = await fetch_html(client, url)
         return extract_github_html_context(html, url)
-    html = await fetch_html(client, url)
     if source == "reddit":
-        return extract_reddit_context(html, url)
+        try:
+            old_url = reddit_old_url(url)
+            html = await fetch_html(client, old_url)
+            context = extract_reddit_context(html, old_url)
+            if context:
+                return context
+        except Exception:
+            if not _row_value(row, "content"):
+                raise
+        return _format_context(trim_text(_row_value(row, "content"), POST_LIMIT), [])
     if source == "hackernews":
-        return extract_hn_context(html, url)
+        discussion_url = hn_discussion_url(row)
+        html = await fetch_html(client, discussion_url)
+        context = extract_hn_context(html, discussion_url)
+        if context:
+            return context
+        return _format_context(trim_text(_row_value(row, "content"), POST_LIMIT), [])
     return ""
 
 
@@ -160,6 +194,7 @@ async def enrich_new_candidates(limit: int = DEFAULT_LIMIT) -> AsyncIterator[str
     yield f"Scrapling: 提交 {len(rows)} 条候选补全上下文..."
     done = 0
     failed = 0
+    skipped = 0
     async with httpx.AsyncClient() as client:
         for row in rows:
             try:
@@ -168,10 +203,10 @@ async def enrich_new_candidates(limit: int = DEFAULT_LIMIT) -> AsyncIterator[str
                     db.mark_enriched(row["id"], content)
                     done += 1
                 else:
-                    db.mark_enrichment_failed(row["id"], "empty enrichment result")
-                    failed += 1
+                    db.mark_enrichment_skipped(row["id"], "no extractable context")
+                    skipped += 1
             except Exception as exc:
                 db.mark_enrichment_failed(row["id"], str(exc))
                 failed += 1
 
-    yield f"✓ Scrapling 补全完成: {done} 条成功, {failed} 条失败"
+    yield f"✓ Scrapling 补全完成: {done} 条成功, {failed} 条失败, {skipped} 条跳过"

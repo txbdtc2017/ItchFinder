@@ -54,6 +54,7 @@ python main.py
 - 候选要求 `pain_score > 0`
 - 只处理 `reddit`、`hackernews`、`github`
 - 补全失败不会中断刷新,24 小时后重试
+- 页面没有可抽取正文/评论时会标记为跳过,不会反复显示为失败
 - AI 推荐条目会额外生成中文总结
 
 当前版本只使用 Scrapling parser,抓取仍由 `httpx` 完成。

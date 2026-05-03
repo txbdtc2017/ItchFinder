@@ -19,6 +19,9 @@
 - Scrapling enrichment is integrated as parser-only context enrichment for Reddit, Hacker News, and GitHub Issues.
 - Refresh flow is fetch -> insert -> Scrapling enrichment -> AI scoring -> AI summary -> translation -> refresh log.
 - RSS feeds are fetched with explicit `httpx` timeouts so one slow feed cannot block the refresh pipeline.
+- Reddit enrichment now prefers `old.reddit.com` and falls back to the existing Reddit JSON content when HTML fetch is blocked.
+- Hacker News enrichment now uses `external_id` to fetch the HN discussion page instead of the external article URL.
+- Empty enrichment results are marked `skipped`, not `failed`, so they do not repeat as noisy failures.
 - Latest Docker runtime is running and reachable at `http://127.0.0.1:18081/`.
 
 ## Active References
@@ -29,11 +32,13 @@
 
 ## Verification
 
-- `.venv/bin/python -m unittest discover -s tests` passes 27 tests.
+- `.venv/bin/python -m unittest discover -s tests` passes 35 tests.
 - `docker compose config --quiet`
 - `docker compose up -d --build itchfinder`
 - `curl -fsS http://127.0.0.1:18081/`
 - Latest startup pipeline reached Scrapling enrichment and AI summary without crashing.
+- Latest Scrapling Docker run completed `29` success, `0` failure, `1` skipped.
+- Current homepage no longer renders `补全失败` labels after historical empty/blocked failures were reset to pending.
 
 ## Notes
 

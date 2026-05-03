@@ -249,7 +249,7 @@ def get_enrichment_candidates(limit: int = 30, cooldown_hours: int = 24) -> list
     with get_conn() as conn:
         return conn.execute(
             """
-            SELECT id, source, title, content, url, pain_score, enriched_content,
+            SELECT id, source, external_id, title, content, url, pain_score, enriched_content,
                    enriched_at, enrichment_status, enrichment_error
             FROM items
             WHERE pain_score > 0
@@ -298,6 +298,22 @@ def mark_enrichment_failed(item_id: int, error: str) -> None:
             WHERE id = ?
             """,
             (now, short_error, item_id),
+        )
+
+
+def mark_enrichment_skipped(item_id: int, reason: str) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    short_reason = reason[:300]
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE items
+            SET enriched_at = ?,
+                enrichment_status = 'skipped',
+                enrichment_error = ?
+            WHERE id = ?
+            """,
+            (now, short_reason, item_id),
         )
 
 

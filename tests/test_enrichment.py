@@ -27,6 +27,26 @@ GITHUB_HTML = """
 </body></html>
 """
 
+REDDIT_VERIFICATION_HTML = """
+<html><head><title>Reddit - Please wait for verification</title></head><body></body></html>
+"""
+
+OLD_REDDIT_WITH_SIDEBAR_HTML = """
+<html><body>
+  <div class="side"><div class="usertext-body"><p>Community rules should not be the post.</p></div></div>
+  <div class="thing link">
+    <div class="entry">
+      <div class="usertext-body"><div class="md"><p>Actual old Reddit post body.</p></div></div>
+    </div>
+  </div>
+  <div class="comment"><div class="usertext-body"><p>Useful old Reddit comment.</p></div></div>
+</body></html>
+"""
+
+HN_EMPTY_HTML = """
+<html><body><table><tr class="athing"><td>Story with no comments</td></tr></table></body></html>
+"""
+
 
 class EnrichmentParserTests(unittest.TestCase):
     def test_trim_text_collapses_whitespace_and_limits_length(self):
@@ -45,6 +65,16 @@ class EnrichmentParserTests(unittest.TestCase):
         self.assertIn("Comments:", result)
         self.assertIn("- Same here, every client wants a different format.", result)
         self.assertIn("- I tried spreadsheets but the handoff still breaks.", result)
+
+    def test_reddit_old_page_extractor_ignores_sidebar_usertext(self):
+        result = enrichment.extract_reddit_context(
+            OLD_REDDIT_WITH_SIDEBAR_HTML,
+            "https://old.reddit.com/r/test/comments/abc/title/",
+        )
+
+        self.assertIn("Post: Actual old Reddit post body.", result)
+        self.assertIn("- Useful old Reddit comment.", result)
+        self.assertNotIn("Community rules", result)
 
     def test_hn_extractor_returns_ordered_comments(self):
         result = enrichment.extract_hn_context(
@@ -76,6 +106,92 @@ class EnrichmentParserTests(unittest.TestCase):
         self.assertIn("- The setup flow is confusing for non-admin users.", result)
         self.assertIn("- Please support exporting the audit trail.", result)
 
+    def test_reddit_old_url_converts_www_reddit_links(self):
+        self.assertEqual(
+            enrichment.reddit_old_url("https://www.reddit.com/r/test/comments/abc/title/"),
+            "https://old.reddit.com/r/test/comments/abc/title/",
+        )
+
+    def test_hn_discussion_url_prefers_external_id_over_story_url(self):
+        row = {
+            "source": "hackernews",
+            "external_id": "47992742",
+            "url": "https://example.com/article",
+        }
+
+        self.assertEqual(
+            enrichment.hn_discussion_url(row),
+            "https://news.ycombinator.com/item?id=47992742",
+        )
+
+    def test_reddit_enrich_uses_old_reddit_page_before_falling_back_to_content(self):
+        calls = []
+        row = {
+            "id": 1,
+            "source": "reddit",
+            "external_id": "abc",
+            "content": "Existing post body",
+            "url": "https://www.reddit.com/r/test/comments/abc/title/",
+        }
+
+        async def fake_fetch_html(client, url):
+            calls.append(url)
+            if "old.reddit.com" in url:
+                return REDDIT_HTML
+            return REDDIT_VERIFICATION_HTML
+
+        async def run():
+            with mock.patch.object(enrichment, "fetch_html", side_effect=fake_fetch_html):
+                return await enrichment.enrich_item(object(), row)
+
+        result = asyncio.run(run())
+
+        self.assertEqual(calls, ["https://old.reddit.com/r/test/comments/abc/title/"])
+        self.assertIn("Post: I spend hours copying reports by hand.", result)
+
+    def test_reddit_enrich_falls_back_to_existing_content_when_fetch_is_blocked(self):
+        row = {
+            "id": 1,
+            "source": "reddit",
+            "external_id": "abc",
+            "content": "Existing post body from original Reddit JSON",
+            "url": "https://www.reddit.com/r/test/comments/abc/title/",
+        }
+
+        async def fake_fetch_html(client, url):
+            raise RuntimeError("blocked")
+
+        async def run():
+            with mock.patch.object(enrichment, "fetch_html", side_effect=fake_fetch_html):
+                return await enrichment.enrich_item(object(), row)
+
+        result = asyncio.run(run())
+
+        self.assertEqual(result, "Post: Existing post body from original Reddit JSON")
+
+    def test_hn_enrich_fetches_hn_discussion_page_not_external_url(self):
+        calls = []
+        row = {
+            "id": 2,
+            "source": "hackernews",
+            "external_id": "47992742",
+            "content": "",
+            "url": "https://example.com/article",
+        }
+
+        async def fake_fetch_html(client, url):
+            calls.append(url)
+            return HN_HTML
+
+        async def run():
+            with mock.patch.object(enrichment, "fetch_html", side_effect=fake_fetch_html):
+                return await enrichment.enrich_item(object(), row)
+
+        result = asyncio.run(run())
+
+        self.assertEqual(calls, ["https://news.ycombinator.com/item?id=47992742"])
+        self.assertIn("I wish deploy logs", result)
+
     def test_enrich_new_candidates_marks_success_and_failure(self):
         rows = [
             {"id": 1, "source": "reddit", "url": "https://www.reddit.com/r/test/comments/abc/title/"},
@@ -104,6 +220,38 @@ class EnrichmentParserTests(unittest.TestCase):
         self.assertEqual(mark_enriched.call_args.args[0], 1)
         mark_failed.assert_called_once()
         self.assertEqual(mark_failed.call_args.args[0], 2)
+
+    def test_enrich_new_candidates_marks_empty_result_as_skipped_not_failed(self):
+        rows = [
+            {
+                "id": 3,
+                "source": "hackernews",
+                "external_id": "123",
+                "content": "",
+                "url": "https://example.com/article",
+            },
+        ]
+
+        async def fake_fetch_html(client, url):
+            return HN_EMPTY_HTML
+
+        async def run():
+            messages = []
+            with mock.patch("db.get_enrichment_candidates", return_value=rows), \
+                 mock.patch("db.mark_enriched") as mark_enriched, \
+                 mock.patch("db.mark_enrichment_failed") as mark_failed, \
+                 mock.patch("db.mark_enrichment_skipped") as mark_skipped, \
+                 mock.patch.object(enrichment, "fetch_html", side_effect=fake_fetch_html):
+                async for message in enrichment.enrich_new_candidates(limit=30):
+                    messages.append(message)
+            return messages, mark_enriched, mark_failed, mark_skipped
+
+        messages, mark_enriched, mark_failed, mark_skipped = asyncio.run(run())
+
+        self.assertTrue(any("跳过" in message for message in messages))
+        mark_enriched.assert_not_called()
+        mark_failed.assert_not_called()
+        mark_skipped.assert_called_once_with(3, "no extractable context")
 
 
 if __name__ == "__main__":

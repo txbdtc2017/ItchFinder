@@ -65,6 +65,7 @@ class EnrichmentDatabaseTests(unittest.TestCase):
         rows = db.get_enrichment_candidates(limit=30)
 
         self.assertEqual([row["id"] for row in rows], [github_id])
+        self.assertEqual(rows[0]["external_id"], "g1")
 
     def test_failed_enrichment_retries_after_cooldown(self):
         item_id = self._insert_item(external_id="r2")
@@ -79,6 +80,21 @@ class EnrichmentDatabaseTests(unittest.TestCase):
 
         retry_rows = db.get_enrichment_candidates(limit=30, cooldown_hours=24)
         self.assertEqual([row["id"] for row in retry_rows], [item_id])
+
+    def test_skipped_enrichment_is_not_retried_as_candidate(self):
+        item_id = self._insert_item(external_id="r4")
+        db.mark_enrichment_skipped(item_id, "no extractable context")
+
+        rows = db.get_enrichment_candidates(limit=30)
+
+        self.assertEqual(rows, [])
+        with db.get_conn() as conn:
+            row = conn.execute(
+                "SELECT enrichment_status, enrichment_error FROM items WHERE id = ?",
+                (item_id,),
+            ).fetchone()
+        self.assertEqual(row["enrichment_status"], "skipped")
+        self.assertEqual(row["enrichment_error"], "no extractable context")
 
     def test_summary_candidate_and_update_helpers(self):
         item_id = self._insert_item(external_id="r3")
