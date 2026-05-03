@@ -19,6 +19,7 @@ from fastapi.templating import Jinja2Templates
 
 import db
 from ai_scorer import run_ai_scoring
+from enrichment import enrich_new_candidates
 from sources import (
     devto,
     github_issues,
@@ -121,7 +122,10 @@ async def pipeline_events(trigger: str = "manual"):
             stats[name] = 0
             yield f"✗ {name} 失败: {str(e)[:80]}"
 
-    # 先 AI 评分(决定 ai_flagged),再翻译(只翻被推荐的),省时省钱
+    async for m in enrich_new_candidates(limit=30):
+        yield m
+
+    # 先补全上下文,再 AI 评分(决定 ai_flagged),再翻译(只翻被推荐的),省时省钱
     async for m in run_ai_scoring():
         yield m
 
