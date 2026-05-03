@@ -1,7 +1,7 @@
 """SQLite 持久化层。仅用 sqlite3 标准库。"""
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 DB_PATH = Path(__file__).parent / "data.db"
@@ -52,6 +52,18 @@ def init_db() -> None:
         for col, default in [("ai_scored", "0"), ("ai_flagged", "0"), ("is_translated", "0")]:
             try:
                 conn.execute(f"ALTER TABLE items ADD COLUMN {col} INTEGER DEFAULT {default}")
+            except sqlite3.OperationalError:
+                pass
+        for col, col_type in [
+            ("enriched_content", "TEXT"),
+            ("enriched_at", "TEXT"),
+            ("enrichment_status", "TEXT DEFAULT 'pending'"),
+            ("enrichment_error", "TEXT"),
+            ("ai_summary", "TEXT"),
+            ("ai_summary_at", "TEXT"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE items ADD COLUMN {col} {col_type}")
             except sqlite3.OperationalError:
                 pass
 
@@ -214,11 +226,96 @@ def get_unscored_items(limit: int = 100) -> list[sqlite3.Row]:
     """取 pain_score > 0 且未被 AI 评估过的条目。"""
     with get_conn() as conn:
         return conn.execute(
-            "SELECT id, source, title, content FROM items "
+            "SELECT id, source, title, content, enriched_content FROM items "
             "WHERE pain_score > 0 AND ai_scored = 0 "
             "ORDER BY pain_score DESC LIMIT ?",
             (limit,),
         ).fetchall()
+
+
+def get_enrichment_candidates(limit: int = 30, cooldown_hours: int = 24) -> list[sqlite3.Row]:
+    """取需要补全上下文的高信号候选。失败项过冷却期后重试。"""
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(hours=cooldown_hours)
+    ).isoformat()
+    with get_conn() as conn:
+        return conn.execute(
+            """
+            SELECT id, source, title, content, url, pain_score, enriched_content,
+                   enriched_at, enrichment_status, enrichment_error
+            FROM items
+            WHERE pain_score > 0
+              AND source IN ('reddit', 'hackernews', 'github')
+              AND COALESCE(enrichment_status, 'pending') != 'done'
+              AND (
+                    COALESCE(enrichment_status, 'pending') = 'pending'
+                    OR (
+                        enrichment_status = 'failed'
+                        AND COALESCE(enriched_at, '') <= ?
+                    )
+                  )
+            ORDER BY pain_score DESC, created_at DESC
+            LIMIT ?
+            """,
+            (cutoff, limit),
+        ).fetchall()
+
+
+def mark_enriched(item_id: int, content: str) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE items
+            SET enriched_content = ?,
+                enriched_at = ?,
+                enrichment_status = 'done',
+                enrichment_error = NULL
+            WHERE id = ?
+            """,
+            (content, now, item_id),
+        )
+
+
+def mark_enrichment_failed(item_id: int, error: str) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    short_error = error[:300]
+    with get_conn() as conn:
+        conn.execute(
+            """
+            UPDATE items
+            SET enriched_at = ?,
+                enrichment_status = 'failed',
+                enrichment_error = ?
+            WHERE id = ?
+            """,
+            (now, short_error, item_id),
+        )
+
+
+def get_ai_summary_candidates(limit: int = 30) -> list[sqlite3.Row]:
+    """取已被 AI 标记但还没有总结的条目。"""
+    with get_conn() as conn:
+        return conn.execute(
+            """
+            SELECT id, source, title, content, enriched_content
+            FROM items
+            WHERE ai_flagged = 1
+              AND ai_summary IS NULL
+            ORDER BY pain_score DESC, created_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+
+def update_ai_summary(item_id: int, summary: str) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE items SET ai_summary = ?, ai_summary_at = ? WHERE id = ?",
+            (summary, now, item_id),
+        )
 
 
 def get_untranslated(sources: list[str], limit: int = 200) -> list[sqlite3.Row]:
