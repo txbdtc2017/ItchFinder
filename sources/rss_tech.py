@@ -6,6 +6,7 @@ import hashlib
 from datetime import datetime, timezone
 
 import feedparser
+import httpx
 
 from .base import UA
 
@@ -15,10 +16,12 @@ FEEDS = [
     ("huxiu", "https://www.huxiu.com/rss/0.xml"),
 ]
 
+RSS_TIMEOUT = 12
 
-def _parse_feed(name: str, url: str) -> list[dict]:
+
+def _parse_feed_content(name: str, content: bytes) -> list[dict]:
     try:
-        d = feedparser.parse(url, request_headers={"User-Agent": UA})
+        d = feedparser.parse(content)
     except Exception as e:
         print(f"[rss_tech/{name}] parse failed: {e}")
         return []
@@ -58,10 +61,13 @@ def _parse_feed(name: str, url: str) -> list[dict]:
 
 async def fetch() -> list[dict]:
     flat: list[dict] = []
-    for name, url in FEEDS:
-        try:
-            items = await asyncio.to_thread(_parse_feed, name, url)
-            flat.extend(items)
-        except Exception as e:
-            print(f"[rss_tech/{name}] failed: {e}")
+    async with httpx.AsyncClient(headers={"User-Agent": UA}, follow_redirects=True) as client:
+        for name, url in FEEDS:
+            try:
+                response = await client.get(url, timeout=RSS_TIMEOUT)
+                response.raise_for_status()
+                items = await asyncio.to_thread(_parse_feed_content, name, response.content)
+                flat.extend(items)
+            except Exception as e:
+                print(f"[rss_tech/{name}] failed: {e}")
     return flat
