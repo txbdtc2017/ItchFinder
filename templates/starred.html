@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
 
-<h2 class="text-lg font-bold text-gray-700 mb-4">已标记的条目 ({{ items|length }})</h2>
+{% set display_total = total_count|default(items|length) %}
+<h2 class="text-lg font-bold text-gray-700 mb-1">已标记的条目 ({{ display_total }})</h2>
+<p class="text-sm text-gray-400 mb-4">当前显示 {{ items|length }} 条</p>
 
 {% for it in items %}
 <div data-item-card class="bg-white rounded-lg shadow-sm p-4 mb-3 card-starred">
@@ -93,6 +95,8 @@
 {% else %}
   <p class="text-center text-gray-400 py-12">还没有标记过任何条目</p>
 {% endfor %}
+
+{% include "_pagination.html" %}
 
 <script>
 async function translateItem(btn, id) {

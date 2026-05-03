@@ -6,6 +6,7 @@ import socket
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlencode
 
 from dotenv import load_dotenv
 
@@ -37,6 +38,7 @@ from translator import translate_new_items
 
 BASE_DIR = Path(__file__).parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+PAGE_SIZE = 10
 
 
 def rel_time(iso: str | None) -> str:
@@ -160,6 +162,42 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 
+def _bool_param(value, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return value.strip().lower() not in {"", "0", "false", "none", "null"}
+    return bool(value)
+
+
+def _pagination(page: int, total_count: int, page_size: int = PAGE_SIZE) -> tuple[int, int, int]:
+    total_pages = max(1, (total_count + page_size - 1) // page_size)
+    current_page = min(max(page, 1), total_pages)
+    offset = (current_page - 1) * page_size
+    return current_page, total_pages, offset
+
+
+def _index_page_url_prefix(
+    source: str,
+    min_score: int,
+    show_starred: int,
+    show_hidden: int,
+    only_ai: int,
+    q: str,
+) -> str:
+    params = {
+        "applied": 1,
+        "source": source,
+        "min_score": min_score,
+        "show_starred": show_starred,
+        "show_hidden": show_hidden,
+        "only_ai": only_ai,
+        "q": q,
+        "page": "",
+    }
+    return "/?" + urlencode(params)
+
+
 @app.get("/")
 def index(
     request: Request,
@@ -170,13 +208,14 @@ def index(
     q: str | None = None,
     only_ai: int | None = None,
     applied: int = 0,
+    page: int = 1,
 ):
     # applied=1 来自表单隐藏字段,区分"首次访问"和"提交了表单但 checkbox 未勾选"
     eff_starred = bool(show_starred) if applied else True
     eff_hidden = bool(show_hidden) if applied else False
     # only_ai 默认 True(首次访问只看 AI 推荐),用户点按钮后可关
     eff_only_ai = bool(only_ai) if applied else True
-    rows = db.query_items(
+    total_count = db.count_items(
         source=source or None,
         min_score=min_score,
         show_starred=eff_starred,
@@ -184,28 +223,65 @@ def index(
         search=q or None,
         only_ai=eff_only_ai,
     )
+    page, total_pages, offset = _pagination(page, total_count)
+    rows = db.query_items(
+        source=source or None,
+        min_score=min_score,
+        show_starred=eff_starred,
+        show_hidden=eff_hidden,
+        search=q or None,
+        only_ai=eff_only_ai,
+        limit=PAGE_SIZE,
+        offset=offset,
+    )
+    source_value = source or ""
+    q_value = q or ""
+    show_starred_value = 1 if eff_starred else 0
+    show_hidden_value = 1 if eff_hidden else 0
+    only_ai_value = 1 if eff_only_ai else 0
     return templates.TemplateResponse(
         request,
         "index.html",
         {
             "items": rows,
-            "source": source or "",
+            "source": source_value,
             "min_score": min_score,
-            "show_starred": 1 if eff_starred else 0,
-            "show_hidden": 1 if eff_hidden else 0,
-            "q": q or "",
-            "only_ai": 1 if eff_only_ai else 0,
+            "show_starred": show_starred_value,
+            "show_hidden": show_hidden_value,
+            "q": q_value,
+            "only_ai": only_ai_value,
+            "page": page,
+            "page_size": PAGE_SIZE,
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "page_url_prefix": _index_page_url_prefix(
+                source_value,
+                min_score,
+                show_starred_value,
+                show_hidden_value,
+                only_ai_value,
+                q_value,
+            ),
         },
     )
 
 
 @app.get("/starred")
-def starred(request: Request):
-    rows = db.query_starred()
+def starred(request: Request, page: int = 1):
+    total_count = db.count_starred()
+    page, total_pages, offset = _pagination(page, total_count)
+    rows = db.query_starred(limit=PAGE_SIZE, offset=offset)
     return templates.TemplateResponse(
         request,
         "starred.html",
-        {"items": rows},
+        {
+            "items": rows,
+            "page": page,
+            "page_size": PAGE_SIZE,
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "page_url_prefix": "/starred?page=",
+        },
     )
 
 
@@ -238,8 +314,8 @@ async def hide_all(request: Request):
     applied = int(body.get("applied", 0))
     only_ai = body.get("only_ai")
     show_starred = body.get("show_starred")
-    eff_starred = bool(show_starred) if applied else True
-    eff_only_ai = bool(only_ai) if applied else True
+    eff_starred = _bool_param(show_starred) if applied else True
+    eff_only_ai = _bool_param(only_ai) if applied else True
     n = db.hide_all_matching(
         source=body.get("source") or None,
         min_score=int(body.get("min_score", 1)),

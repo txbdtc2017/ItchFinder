@@ -22,23 +22,27 @@
 - Reddit enrichment now prefers `old.reddit.com` and falls back to the existing Reddit JSON content when HTML fetch is blocked.
 - Hacker News enrichment now uses `external_id` to fetch the HN discussion page instead of the external article URL.
 - Empty enrichment results are marked `skipped`, not `failed`, so they do not repeat as noisy failures.
+- Main and starred lists use server-side pagination with `10` items per page.
 - Latest Docker runtime is running and reachable at `http://127.0.0.1:18081/`.
 
 ## Active References
 
 - Spec: `docs/superpowers/specs/2026-05-03-scrapling-enrichment-design.md`
 - Plan: `docs/superpowers/plans/2026-05-03-scrapling-enrichment.md`
+- Pagination spec: `docs/superpowers/specs/2026-05-03-list-pagination-design.md`
+- Pagination plan: `docs/superpowers/plans/2026-05-03-list-pagination.md`
 - Read the spec or plan only when changing requirements, reviewing decisions, or resuming task execution.
 
 ## Verification
 
-- `.venv/bin/python -m unittest discover -s tests` passes 35 tests.
+- `.venv/bin/python -m unittest discover -s tests` passes 41 tests.
 - `docker compose config --quiet`
 - `docker compose up -d --build itchfinder`
 - `curl -fsS http://127.0.0.1:18081/`
 - Latest startup pipeline reached Scrapling enrichment and AI summary without crashing.
 - Latest Scrapling Docker run completed `29` success, `0` failure, `1` skipped.
 - Current homepage no longer renders `补全失败` labels after historical empty/blocked failures were reset to pending.
+- Latest pagination check loaded page `2` for Reddit with pagination controls rendered.
 
 ## Notes
 

@@ -1,0 +1,27 @@
+{% set current_page = page|default(1) %}
+{% set pages = total_pages|default(1) %}
+{% if pages > 1 %}
+<nav class="mt-5 flex flex-wrap items-center justify-between gap-3 text-sm text-gray-500">
+  <div>
+    第 {{ current_page }} / {{ pages }} 页
+  </div>
+  <div class="flex items-center gap-2">
+    {% if current_page > 1 %}
+      <a href="{{ page_url_prefix }}{{ current_page - 1 }}"
+         class="px-3 py-1 rounded border border-gray-200 bg-white text-gray-600 hover:bg-indigo-50 hover:border-indigo-300">
+        上一页
+      </a>
+    {% else %}
+      <span class="px-3 py-1 rounded border border-gray-100 bg-gray-100 text-gray-300">上一页</span>
+    {% endif %}
+    {% if current_page < pages %}
+      <a href="{{ page_url_prefix }}{{ current_page + 1 }}"
+         class="px-3 py-1 rounded border border-gray-200 bg-white text-gray-600 hover:bg-indigo-50 hover:border-indigo-300">
+        下一页
+      </a>
+    {% else %}
+      <span class="px-3 py-1 rounded border border-gray-100 bg-gray-100 text-gray-300">下一页</span>
+    {% endif %}
+  </div>
+</nav>
+{% endif %}

@@ -129,6 +129,32 @@ def insert_items(items: list[dict]) -> tuple[int, int]:
     return total_new, new_high
 
 
+def _item_filter_clause(
+    source: str | None = None,
+    min_score: int = 1,
+    show_starred: bool = True,
+    show_hidden: bool = False,
+    search: str | None = None,
+    only_ai: bool = False,
+) -> tuple[str, list]:
+    clauses = ["pain_score >= ?"]
+    params: list = [min_score]
+    if source:
+        clauses.append("source = ?")
+        params.append(source)
+    if not show_starred:
+        clauses.append("is_starred = 0")
+    if not show_hidden:
+        clauses.append("is_hidden = 0")
+    if only_ai:
+        clauses.append("ai_flagged = 1")
+    if search:
+        clauses.append("(LOWER(title) LIKE ? OR LOWER(COALESCE(content, '')) LIKE ?)")
+        kw = f"%{search.lower()}%"
+        params.extend([kw, kw])
+    return " AND ".join(clauses), params
+
+
 def query_items(
     source: str | None = None,
     min_score: int = 1,
@@ -137,35 +163,56 @@ def query_items(
     search: str | None = None,
     only_ai: bool = False,
     limit: int = 500,
+    offset: int = 0,
 ) -> list[sqlite3.Row]:
-    sql = "SELECT * FROM items WHERE pain_score >= ?"
-    params: list = [min_score]
-    if source:
-        sql += " AND source = ?"
-        params.append(source)
-    if not show_starred:
-        sql += " AND is_starred = 0"
-    if not show_hidden:
-        sql += " AND is_hidden = 0"
-    if only_ai:
-        sql += " AND ai_flagged = 1"
-    if search:
-        sql += " AND (LOWER(title) LIKE ? OR LOWER(COALESCE(content, '')) LIKE ?)"
-        kw = f"%{search.lower()}%"
-        params.extend([kw, kw])
-    sql += " ORDER BY pain_score DESC, created_at DESC LIMIT ?"
-    params.append(limit)
+    where_sql, params = _item_filter_clause(
+        source=source,
+        min_score=min_score,
+        show_starred=show_starred,
+        show_hidden=show_hidden,
+        search=search,
+        only_ai=only_ai,
+    )
+    sql = f"SELECT * FROM items WHERE {where_sql} ORDER BY pain_score DESC, created_at DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
     with get_conn() as conn:
         return conn.execute(sql, params).fetchall()
 
 
-def query_starred(limit: int = 500) -> list[sqlite3.Row]:
+def count_items(
+    source: str | None = None,
+    min_score: int = 1,
+    show_starred: bool = True,
+    show_hidden: bool = False,
+    search: str | None = None,
+    only_ai: bool = False,
+) -> int:
+    where_sql, params = _item_filter_clause(
+        source=source,
+        min_score=min_score,
+        show_starred=show_starred,
+        show_hidden=show_hidden,
+        search=search,
+        only_ai=only_ai,
+    )
+    with get_conn() as conn:
+        row = conn.execute(f"SELECT COUNT(*) AS n FROM items WHERE {where_sql}", params).fetchone()
+        return int(row["n"])
+
+
+def query_starred(limit: int = 500, offset: int = 0) -> list[sqlite3.Row]:
     with get_conn() as conn:
         return conn.execute(
             "SELECT * FROM items WHERE is_starred = 1 "
-            "ORDER BY created_at DESC LIMIT ?",
-            (limit,),
+            "ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (limit, offset),
         ).fetchall()
+
+
+def count_starred() -> int:
+    with get_conn() as conn:
+        row = conn.execute("SELECT COUNT(*) AS n FROM items WHERE is_starred = 1").fetchone()
+        return int(row["n"])
 
 
 def toggle_starred(item_id: int) -> None:

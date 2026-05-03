@@ -194,7 +194,7 @@
   }
 
   async function hideAllVisible(btn) {
-    const ok = await showConfirm('确认把当前显示的所有条目隐藏?');
+    const ok = await showConfirm('确认把当前筛选条件下的所有条目隐藏?');
     if (!ok) return;
     const original = btn.textContent;
     btn.disabled = true;
