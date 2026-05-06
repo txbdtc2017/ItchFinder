@@ -88,6 +88,36 @@
   </div>
 
   <script>
+  const WAKE_RELOAD_AFTER_MS = 5 * 60 * 1000;
+  const WAKE_CHECK_INTERVAL_MS = 60 * 1000;
+  let lastWakeSeenAt = Date.now();
+  window.__itchfinderRefreshing = false;
+
+  function markWakeSeen() {
+    lastWakeSeenAt = Date.now();
+  }
+
+  function reloadAfterWake() {
+    if (document.hidden || window.__itchfinderRefreshing) {
+      markWakeSeen();
+      return;
+    }
+    const now = Date.now();
+    if (now - lastWakeSeenAt >= WAKE_RELOAD_AFTER_MS) {
+      location.reload();
+      return;
+    }
+    lastWakeSeenAt = now;
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) markWakeSeen();
+    else reloadAfterWake();
+  });
+  window.addEventListener('focus', reloadAfterWake);
+  window.addEventListener('pageshow', reloadAfterWake);
+  setInterval(reloadAfterWake, WAKE_CHECK_INTERVAL_MS);
+
   function startRefresh() {
     const btn = document.getElementById('refresh-btn');
     const overlay = document.getElementById('refresh-overlay');
@@ -96,6 +126,7 @@
     const spinner = document.getElementById('refresh-spinner');
 
     btn.disabled = true;
+    window.__itchfinderRefreshing = true;
     btn.textContent = '刷新中...';
     btn.classList.add('opacity-50');
     overlay.classList.remove('hidden');
@@ -125,6 +156,7 @@
     };
     es.onerror = function() {
       es.close();
+      window.__itchfinderRefreshing = false;
       title.textContent = '连接中断';
       spinner.classList.add('hidden');
       btn.disabled = false;

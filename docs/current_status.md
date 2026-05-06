@@ -27,6 +27,7 @@
 - Refresh now runs pre-AI high-score enrichment, AI scoring, AI-recommended enrichment, AI summary, then translation.
 - A bounded background enrichment job runs every 2 minutes with batch size `20` and skips if another enrichment pass is active.
 - SQLite WAL mode is set during DB initialization; runtime connections use a busy timeout to reduce read/write contention.
+- Browser pages auto-reload after waking or returning from a hidden state longer than 5 minutes.
 - Latest Docker runtime is running and reachable at `http://127.0.0.1:18081/`.
 
 ## Active References
@@ -41,7 +42,7 @@
 
 ## Verification
 
-- `.venv/bin/python -m unittest discover -s tests` passes 46 tests.
+- `.venv/bin/python -m unittest discover -s tests` passes 47 tests.
 - `docker compose config --quiet`
 - `docker compose up -d --build itchfinder`
 - `curl -fsS http://127.0.0.1:18081/`
@@ -51,6 +52,7 @@
 - Latest pagination check loaded page `2` for Reddit with pagination controls rendered.
 - Latest background enrichment candidate check: `300` eligible rows after Docker verification.
 - Latest runtime logs show `Scrapling推荐补齐` completed `20` success, `0` failure, and background enrichment skipped while that pass was active.
+- Latest wake-refresh template check verifies visibility/focus/pageshow handlers and the 5-minute wake reload threshold.
 
 ## Notes
 
